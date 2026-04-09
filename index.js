@@ -113,7 +113,7 @@ async function startBot() {
 
     const sock = makeWASocket({
         version, auth: state,
-        printQRInTerminal: true,
+        printQRInTerminal: false,
         logger: pino({ level: 'silent' }),
         browser: ['Ali Sindhi Bot', 'Chrome', '5.0'],
         syncFullHistory: false,
@@ -122,6 +122,32 @@ async function startBot() {
     });
 
     sock.ev.on('creds.update', saveCreds);
+
+    // ─── PAIRING CODE (one-time setup) ────────────────────
+    if (!sock.authState.creds.registered) {
+        const number = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
+        if (!number) {
+            console.log('❌ OWNER_NUMBER environment variable set nahi hai!');
+            process.exit(1);
+        }
+        await sleep(2000);
+        try {
+            const code = await sock.requestPairingCode(number);
+            console.log('');
+            console.log('╔══════════════════════════════════╗');
+            console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
+            console.log(`║   👉  ${code}  👈               ║`);
+            console.log('╚══════════════════════════════════╝');
+            console.log('');
+            console.log('📱 Steps:');
+            console.log('   WhatsApp > 3 Dots > Linked Devices');
+            console.log('   > Link with Phone Number');
+            console.log('   > Upar wala code enter karo');
+            console.log('   ✅ Bas ek baar karna hai!');
+        } catch(e) {
+            console.log('❌ Pairing code error:', e.message);
+        }
+    }
 
     sock.ev.on('messages.upsert', async ({ messages }) => {
         for (const msg of messages) {
