@@ -125,27 +125,44 @@ async function startBot() {
 
     // ─── PAIRING CODE (one-time setup) ────────────────────
     if (!sock.authState.creds.registered) {
-        const number = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-        if (!number) {
-            console.log('❌ OWNER_NUMBER environment variable set nahi hai!');
+        let number = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
+        // Auto fix: remove leading 0, add 92 if needed
+        if (number.startsWith('0')) number = '92' + number.slice(1);
+        if (!number.startsWith('92')) number = '92' + number;
+        
+        console.log('📞 Number jo use ho raha hai:', number);
+        
+        if (!number || number.length < 11) {
+            console.log('❌ OWNER_NUMBER galat hai! Format: 923001234567');
             process.exit(1);
         }
-        await sleep(2000);
+        
+        // Wait for connection to stabilize
+        await sleep(5000);
+        
         try {
             const code = await sock.requestPairingCode(number);
             console.log('');
             console.log('╔══════════════════════════════════╗');
             console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
-            console.log(`║   👉  ${code}  👈               ║`);
+            console.log('║                                  ║');
+            console.log(`║        👉  ${code}  👈           ║`);
+            console.log('║                                  ║');
             console.log('╚══════════════════════════════════╝');
             console.log('');
-            console.log('📱 Steps:');
-            console.log('   WhatsApp > 3 Dots > Linked Devices');
-            console.log('   > Link with Phone Number');
-            console.log('   > Upar wala code enter karo');
+            console.log('📱 Ab yeh karo (jaldi - 60 sec mein):');
+            console.log('   1. WhatsApp kholo');
+            console.log('   2. 3 dots > Linked Devices');
+            console.log('   3. Link with Phone Number');
+            console.log('   4. Upar wala code enter karo');
             console.log('   ✅ Bas ek baar karna hai!');
+            console.log('');
+            // Show code again every 20 seconds in case user missed it
+            setTimeout(() => console.log('⏰ Code (reminder):', code), 20000);
+            setTimeout(() => console.log('⏰ Code (reminder):', code), 40000);
         } catch(e) {
             console.log('❌ Pairing code error:', e.message);
+            console.log('💡 Number check karo ya 2 min baad redeploy karo');
         }
     }
 
