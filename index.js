@@ -1,4 +1,4 @@
-import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } from '@whiskeysockets/baileys';
+import makeWASocket, { useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion, makeCacheableSignalKeyStore } from '@whiskeysockets/baileys';
 import { Boom } from '@hapi/boom';
 import pino from 'pino';
 import fs from 'fs';
@@ -107,64 +107,29 @@ function getMenuText() {
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
 
+let pairingRequested = false;
+
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('./auth_info');
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info/');
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
-        version, auth: state,
+        version,
+        auth: {
+            creds: state.creds,
+            keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'silent' })),
+        },
         printQRInTerminal: false,
+        browser: ['Ubuntu', 'Chrome', '20.0.04'],
         logger: pino({ level: 'silent' }),
-        browser: ['Ali Sindhi Bot', 'Chrome', '5.0'],
         syncFullHistory: false,
-        markOnlineOnConnect: false,
+        markOnlineOnConnect: true,
         generateHighQualityLinkPreview: false,
     });
 
     sock.ev.on('creds.update', saveCreds);
 
-    // ─── PAIRING CODE (one-time setup) ────────────────────
-    if (!sock.authState.creds.registered) {
-        let number = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-        // Auto fix: remove leading 0, add 92 if needed
-        if (number.startsWith('0')) number = '92' + number.slice(1);
-        if (!number.startsWith('92')) number = '92' + number;
-        
-        console.log('📞 Number jo use ho raha hai:', number);
-        
-        if (!number || number.length < 11) {
-            console.log('❌ OWNER_NUMBER galat hai! Format: 923001234567');
-            process.exit(1);
-        }
-        
-        // Wait for connection to stabilize
-        await sleep(5000);
-        
-        try {
-            const code = await sock.requestPairingCode(number);
-            console.log('');
-            console.log('╔══════════════════════════════════╗');
-            console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
-            console.log('║                                  ║');
-            console.log(`║        👉  ${code}  👈           ║`);
-            console.log('║                                  ║');
-            console.log('╚══════════════════════════════════╝');
-            console.log('');
-            console.log('📱 Ab yeh karo (jaldi - 60 sec mein):');
-            console.log('   1. WhatsApp kholo');
-            console.log('   2. 3 dots > Linked Devices');
-            console.log('   3. Link with Phone Number');
-            console.log('   4. Upar wala code enter karo');
-            console.log('   ✅ Bas ek baar karna hai!');
-            console.log('');
-            // Show code again every 20 seconds in case user missed it
-            setTimeout(() => console.log('⏰ Code (reminder):', code), 20000);
-            setTimeout(() => console.log('⏰ Code (reminder):', code), 40000);
-        } catch(e) {
-            console.log('❌ Pairing code error:', e.message);
-            console.log('💡 Number check karo ya 2 min baad redeploy karo');
-        }
-    }
+
 
     sock.ev.on('messages.upsert', async ({ messages }) => {
         for (const msg of messages) {
@@ -338,12 +303,44 @@ async function startBot() {
         }
     });
 
-    sock.ev.on('connection.update', ({ connection, lastDisconnect }) => {
-        if (connection === 'close') {
-            const reconnect = (new Boom(lastDisconnect?.error))?.output?.statusCode !== DisconnectReason.loggedOut;
-            if (reconnect) startBot();
-        } else if (connection === 'open') {
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect } = update;
+
+        if (connection === 'connecting' && !state.creds.me && !pairingRequested) {
+            pairingRequested = true;
+            console.log('⏳ Pairing code aa raha hai...');
+            setTimeout(async () => {
+                try {
+                    let code = await sock.requestPairingCode(config.ownerNumber);
+                    code = code?.match(/.{1,4}/g)?.join('-') || code;
+                    console.log('');
+                    console.log('╔══════════════════════════════════╗');
+                    console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
+                    console.log(`║        👉  ${code}  👈            ║`);
+                    console.log('╚══════════════════════════════════╝');
+                    console.log('📱 WhatsApp > Linked Devices > Link with Phone Number');
+                    console.log('👆 Upar wala code enter karo!');
+                } catch (err) {
+                    console.error('❌ Pairing Error:', err.message);
+                    pairingRequested = false;
+                }
+            }, 2000);
+        }
+
+        if (connection === 'open') {
             console.log('✅ DEVELOPER BOY ALI SINDHI is ONLINE!');
+            pairingRequested = false;
+        }
+
+        if (connection === 'close') {
+            const code = lastDisconnect?.error?.output?.statusCode;
+            const shouldReconnect = code !== DisconnectReason.loggedOut;
+            if (shouldReconnect) {
+                pairingRequested = false;
+                startBot();
+            } else {
+                console.log('❌ Logged out. auth_info/ delete karo aur restart karo.');
+            }
         }
     });
 }
