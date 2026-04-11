@@ -212,7 +212,13 @@ async function startBot() {
                 const from = msg.key.remoteJid;
                 const sender = msg.key.participant || msg.key.remoteJid;
                 const senderNum = sender.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-                const isOwner = senderNum === OWNER;
+                // Owner check - multiple formats
+                const senderClean = senderNum.replace(/^92/, '0');
+                const ownerClean = OWNER.replace(/^92/, '0');
+                const isOwner = senderNum === OWNER || 
+                               senderClean === ownerClean ||
+                               sender.includes(OWNER) ||
+                               OWNER.includes(senderNum.slice(-10));
                 const isGroup = from.endsWith('@g.us');
 
                 const body = msg.message?.conversation
