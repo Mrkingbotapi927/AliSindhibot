@@ -148,21 +148,22 @@ async function startBot() {
 
         if (connection === 'connecting' && !state.creds.me && !pairingRequested) {
             pairingRequested = true;
-            await sleep(3000);
-            try {
-                let code = await sock.requestPairingCode(OWNER);
-                code = code?.match(/.{1,4}/g)?.join('-') || code;
-                console.log('\n╔══════════════════════════════════╗');
-                console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
-                console.log(`║        👉  ${code}  👈            ║`);
-                console.log('╚══════════════════════════════════╝');
-                console.log('📱 WhatsApp > Linked Devices > Link with Phone Number');
-                setTimeout(() => console.log('⏰ Code reminder:', code), 25000);
-                setTimeout(() => console.log('⏰ Code reminder:', code), 50000);
-            } catch (e) {
-                console.log('❌ Pairing error:', e.message);
-                pairingRequested = false;
-            }
+            console.log('⏳ Pairing code aa raha hai...');
+            setTimeout(async () => {
+                try {
+                    let code = await sock.requestPairingCode(OWNER);
+                    code = code?.match(/.{1,4}/g)?.join('-') || code;
+                    console.log('\n╔══════════════════════════════════╗');
+                    console.log('║   🔑 WHATSAPP PAIRING CODE       ║');
+                    console.log(`║        👉  ${code}  👈            ║`);
+                    console.log('╚══════════════════════════════════╝');
+                    console.log('📱 WhatsApp > Linked Devices > Link with Phone Number');
+                    console.log('👆 Yeh code enter karo FORAN!');
+                } catch (err) {
+                    console.error('❌ Pairing Error:', err.message);
+                    pairingRequested = false;
+                }
+            }, 2000);
         }
 
         if (connection === 'open') {
