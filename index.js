@@ -58,52 +58,77 @@ function saveConfig() {
 const botImagePath = path.join(__dirname, 'ali_sindhi.png');
 
 function getMenuText() {
-    return `▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-⚡ *DEVELOPER BOY ALI SINDHI* ⚡
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
-👑 *Owner:* ${config.ownerNumber || 'Not Set!'}
-🌐 *Mode:* ${config.mode}
-💎 *Status:* Online
-▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰
+    const uptime = process.uptime();
+    const h = Math.floor(uptime / 3600);
+    const m = Math.floor((uptime % 3600) / 60);
+    const s = Math.floor(uptime % 60);
+    const uptimeStr = `${h}h ${m}m ${s}s`;
+    const memUsed = Math.round(process.memoryUsage().rss / 1024 / 1024);
 
-╔══「 🤖 *BOT COMMANDS* 」══╗
+    return `┃ 🤖 *DEVELOPER BOY ALI SINDHI* 🚀
+┃
+┃ 👋 Hello @${config.ownerNumber}
+┃ ⚡ *Bot Name:* Ali Sindhi Bot
+┃ 👑 *Owner:* Ali Sindhi
+┃ 🌐 *Mode:* ${config.mode.toUpperCase()}
+┃ ⏱️ *Uptime:* ${uptimeStr}
+┃ 💾 *Memory:* ${memUsed}MB
+┃ 🔖 *Prefix:* ${config.prefix}
+┃ 📌 *Version:* 1.0.0
+━━━━━━━━━━━━━━━━━━━━
 
-🔰 *GENERAL*
-├ ${config.prefix}menu — Yeh menu
+📋 *SELECT A CATEGORY BELOW:*`;
+}
+
+function getGeneralMenu() {
+    return `┃ 🔰 *GENERAL COMMANDS*
+┃
+├ ${config.prefix}menu — Main menu
 ├ ${config.prefix}alive — Bot online check
 ├ ${config.prefix}ping — Response speed
+├ ${config.prefix}time — Current time
+├ ${config.prefix}quote — Random quote
+├ ${config.prefix}calc — Calculator
+├ ${config.prefix}weather — Mausam
+━━━━━━━━━━━━━━━━━━━━
+> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
+}
 
-⚙️ *SETTINGS*
+function getOwnerMenu() {
+    return `┃ 👑 *OWNER COMMANDS*
+┃
 ├ ${config.prefix}mod public — Public mode on
 ├ ${config.prefix}mod private — Private mode on
 ├ ${config.prefix}auto status on — Auto status view on
 ├ ${config.prefix}auto status off — Auto status view off
-├ ${config.prefix}call on — Calls block karo
-├ ${config.prefix}call off — Calls allow karo
+├ ${config.prefix}call on — Calls block
+├ ${config.prefix}call off — Calls allow
+├ ${config.prefix}block @user — Block karo
+├ ${config.prefix}unblock @user — Unblock karo
+├ ${config.prefix}broadcast — Sab ko message
+━━━━━━━━━━━━━━━━━━━━
+> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
+}
 
-👥 *GROUP*
+function getGroupMenu() {
+    return `┃ 👥 *GROUP COMMANDS*
+┃
 ├ ${config.prefix}tagall — Sab ko tag karo
 ├ ${config.prefix}kick @user — Member hatao
 ├ ${config.prefix}promote @user — Admin banao
 ├ ${config.prefix}demote @user — Admin hatao
+━━━━━━━━━━━━━━━━━━━━
+> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
+}
 
-🛠️ *UTILITY*
-├ ${config.prefix}block @user — Number block
-├ ${config.prefix}unblock @user — Number unblock
-├ ${config.prefix}broadcast msg — Sab ko message
+function getMediaMenu() {
+    return `┃ 🛠️ *MEDIA & TOOLS*
+┃
 ├ ${config.prefix}sticker — Image to sticker
-├ ${config.prefix}tts text — Text to speech
-├ ${config.prefix}quote — Random quote
-├ ${config.prefix}time — Current time
-├ ${config.prefix}weather city — Mausam
-├ ${config.prefix}calc expr — Calculator
-
-🤖 *AI*
-├ ${config.prefix}ai question — AI se poocho
-├ ${config.prefix}imagine prompt — AI image
-
-╚══════════════════════════╝
-
+├ ${config.prefix}tts — Text to speech
+├ ${config.prefix}ai — AI se poocho
+├ ${config.prefix}imagine — AI image
+━━━━━━━━━━━━━━━━━━━━
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
 
@@ -183,7 +208,31 @@ async function startBot() {
 
                 if (cmd === 'menu') {
                     const image = fs.readFileSync(botImagePath);
-                    await sock.sendMessage(from, { image, caption: getMenuText() }, { quoted: msg });
+                    await sock.sendMessage(from, {
+                        image,
+                        caption: getMenuText(),
+                        footer: '⚡ Ali Sindhi Bot v1.0.0',
+                        buttons: [
+                            { buttonId: '.general', buttonText: { displayText: '🔰 General Commands' }, type: 1 },
+                            { buttonId: '.owner', buttonText: { displayText: '👑 Owner Commands' }, type: 1 },
+                            { buttonId: '.group', buttonText: { displayText: '👥 Group Commands' }, type: 1 },
+                            { buttonId: '.media', buttonText: { displayText: '🛠️ Media & Tools' }, type: 1 },
+                        ],
+                        headerType: 4
+                    }, { quoted: msg });
+                }
+                else if (cmd === 'general') {
+                    await reply(getGeneralMenu());
+                }
+                else if (cmd === 'owner') {
+                    if (!isOwner) return reply('❌ Sirf owner dekh sakta hai!');
+                    await reply(getOwnerMenu());
+                }
+                else if (cmd === 'group') {
+                    await reply(getGroupMenu());
+                }
+                else if (cmd === 'media') {
+                    await reply(getMediaMenu());
                 }
                 else if (cmd === 'alive') {
                     await reply(`▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n⚡ *DEVELOPER BOY ALI SINDHI* ⚡\n▰▰▰▰▰▰▰▰▰▰▰▰▰▰▰\n✅ *Bot Online Hai!*\n💎 *Status:* Active\n🌐 *Mode:* ${config.mode}\n⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`);
