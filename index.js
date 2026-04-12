@@ -40,6 +40,25 @@ const OWNER = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
 const PREFIX = '.';
 const botImagePath = path.join(__dirname, 'ali_sindhi.png');
 
+// ─── SESSION DATA LOAD ─────────────────────────────────────
+// Agar SESSION_DATA environment variable hai toh use karo
+// Warna auth_info folder se load karo
+const SESSION_DATA = process.env.SESSION_DATA || null;
+const authDir = path.join(__dirname, 'auth_info');
+
+if (SESSION_DATA) {
+    try {
+        fs.mkdirSync(authDir, { recursive: true });
+        const sessionFiles = JSON.parse(Buffer.from(SESSION_DATA, 'base64').toString('utf8'));
+        for (const [filename, content] of Object.entries(sessionFiles)) {
+            fs.writeFileSync(path.join(authDir, filename), content);
+        }
+        console.log('✅ Session loaded from SESSION_DATA!');
+    } catch (e) {
+        console.log('❌ Session load error:', e.message);
+    }
+}
+
 const configFile = path.join(__dirname, 'config.json');
 const cfg = {
     mode: 'public',
