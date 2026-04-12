@@ -14,17 +14,17 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// ─── BOT CONFIG ───────────────────────────────────────────
+// ─── CONFIG ───────────────────────────────────────────────
 const config = {
-    OWNER_ID: '923273788442',  // << Apna number yahan likho
+    OWNER_ID: '923273788442',
     INTERVAL: 10000,
     PREFIX: '.',
     BOT_NAME: 'Ali Sindhi Bot',
 };
 
-// ─── HELPERS ──────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const spamMap = new Map();
+const deletedMsgs = new Map();
 
 function isSpam(num) {
     const now = Date.now();
@@ -35,7 +35,6 @@ function isSpam(num) {
 }
 
 function isOwnerNum(senderNum) {
-    if (!config.OWNER_ID) return false;
     const s = senderNum.replace(/[^0-9]/g, '');
     const o = config.OWNER_ID.replace(/[^0-9]/g, '');
     return s === o || s.slice(-10) === o.slice(-10) || s.slice(-9) === o.slice(-9);
@@ -52,16 +51,9 @@ async function sendWithTyping(sock, jid, content, options = {}) {
     return sock.sendMessage(jid, content, options);
 }
 
-// ─── PERSISTENT CONFIG ────────────────────────────────────
 const botImagePath = path.join(__dirname, 'ali_sindhi.png');
 const configFile = path.join(__dirname, 'config.json');
-const cfg = {
-    mode: 'public',
-    autoStatus: true,
-    callBlock: false,
-    onlinePresence: false,
-    antiDelete: false,
-};
+const cfg = { mode: 'public', autoStatus: true, callBlock: false, onlinePresence: false, antiDelete: false };
 if (fs.existsSync(configFile)) {
     try { Object.assign(cfg, JSON.parse(fs.readFileSync(configFile, 'utf8'))); } catch {}
 }
@@ -73,7 +65,6 @@ function getUptime() {
 }
 function getMem() { return Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB'; }
 
-// ─── MENUS ────────────────────────────────────────────────
 function menuMain() {
     return `┃ 🤖 *DEVELOPER BOY ALI SINDHI* 🚀
 ┃
@@ -138,10 +129,8 @@ function menuGroup() {
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
 
-// ─── BOT START ────────────────────────────────────────────
 let pairingRequested = false;
 let onlineInterval = null;
-const deletedMsgs = new Map();
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info/');
@@ -165,7 +154,6 @@ async function startBot() {
     // ─── CONNECTION ────────────────────────────────────────
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect } = update;
-
         if (connection === 'connecting' && !state.creds.me && !pairingRequested) {
             pairingRequested = true;
             console.log('⏳ Waiting 2s...');
@@ -181,7 +169,6 @@ async function startBot() {
                 }
             }, 2000);
         }
-
         if (connection === 'open') {
             console.log('✅ DEVELOPER BOY ALI SINDHI is ONLINE!');
             console.log('👑 Owner:', config.OWNER_ID);
@@ -192,7 +179,6 @@ async function startBot() {
                 }, config.INTERVAL);
             }
         }
-
         if (connection === 'close') {
             if (onlineInterval) clearInterval(onlineInterval);
             const code = lastDisconnect?.error?.output?.statusCode;
@@ -205,33 +191,19 @@ async function startBot() {
         }
     });
 
-    // ─── AUTO STATUS VIEW ──────────────────────────────────
-    sock.ev.on('messages.upsert', async ({ messages }) => {
-        for (const msg of messages) {
-            if (msg.key.remoteJid === 'status@broadcast' && cfg.autoStatus) {
+    // ─── CALL BLOCK ────────────────────────────────────────
+    sock.ev.on('call', async (calls) => {
+        for (const call of calls) {
+            if (cfg.callBlock && call.status === 'offer') {
                 try {
-                    const sender = msg.key.participant || msg.key.remoteJid;
-                    await sock.readMessages([msg.key]);
-                    await sock.sendReceipt(msg.key.remoteJid, sender, [msg.key.id], 'read');
-                    console.log('👁️ Status seen:', sender);
-                } catch (e) {}
+                    await sock.rejectCall(call.id, call.from);
+                    await sock.sendMessage(call.from, { text: '❌ *Calls blocked hain!*' });
+                } catch {}
             }
         }
     });
 
     // ─── ANTI DELETE ───────────────────────────────────────
-    sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (!cfg.antiDelete || type !== 'notify') return;
-        for (const msg of messages) {
-            if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
-            deletedMsgs.set(msg.key.id, msg);
-            if (deletedMsgs.size > 200) {
-                const firstKey = deletedMsgs.keys().next().value;
-                deletedMsgs.delete(firstKey);
-            }
-        }
-    });
-
     sock.ev.on('messages.delete', async (item) => {
         if (!cfg.antiDelete) return;
         try {
@@ -260,48 +232,60 @@ async function startBot() {
         } catch (e) { console.log('Anti-delete error:', e.message); }
     });
 
-    // ─── CALL BLOCK ────────────────────────────────────────
-    sock.ev.on('call', async (calls) => {
-        for (const call of calls) {
-            if (cfg.callBlock && call.status === 'offer') {
-                try {
-                    await sock.rejectCall(call.id, call.from);
-                    await sock.sendMessage(call.from, { text: '❌ *Calls blocked hain!*' });
-                } catch {}
-            }
-        }
-    });
-
-    // ─── MESSAGES ──────────────────────────────────────────
+    // ─── ALL MESSAGES (single handler) ────────────────────
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (type !== 'notify') return;
+
         for (const msg of messages) {
+            if (!msg.message) continue;
+
+            // ── AUTO STATUS VIEW ───────────────────────────
+            if (msg.key.remoteJid === 'status@broadcast') {
+                if (cfg.autoStatus) {
+                    try {
+                        const sender = msg.key.participant || msg.key.remoteJid;
+                        await sock.readMessages([msg.key]);
+                        await sock.sendReceipt(msg.key.remoteJid, sender, [msg.key.id], 'read');
+                        console.log('👁️ Status seen:', sender);
+                    } catch {}
+                }
+                continue;
+            }
+
+            // ── SAVE FOR ANTI DELETE ───────────────────────
+            if (cfg.antiDelete && type === 'notify') {
+                deletedMsgs.set(msg.key.id, msg);
+                if (deletedMsgs.size > 200) {
+                    deletedMsgs.delete(deletedMsgs.keys().next().value);
+                }
+            }
+
+            // ── COMMANDS ───────────────────────────────────
+            if (type !== 'notify') continue;
+
+            const from = msg.key.remoteJid;
+            const sender = msg.key.participant || msg.key.remoteJid;
+            const senderNum = sender.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
+            const isOwner = isOwnerNum(senderNum);
+            const isGroup = from.endsWith('@g.us');
+
+            const body = msg.message?.conversation
+                || msg.message?.extendedTextMessage?.text
+                || msg.message?.imageMessage?.caption || '';
+
+            console.log(`📨 MSG from: ${senderNum} | body: ${body.slice(0,30)}`);
+
+            if (!body.startsWith(config.PREFIX)) continue;
+            if (!isOwner && isSpam(senderNum)) continue;
+            if (cfg.mode === 'private' && !isOwner) continue;
+
+            const args = body.slice(config.PREFIX.length).trim().split(' ');
+            const cmd = args[0].toLowerCase();
+            const text = args.slice(1).join(' ');
+            const reply = (txt) => sendWithTyping(sock, from, { text: txt }, { quoted: msg });
+
+            console.log(`📩 CMD: .${cmd} | isOwner: ${isOwner}`);
+
             try {
-                if (!msg.message) continue;
-                if (msg.key.remoteJid === 'status@broadcast') continue;
-
-                const from = msg.key.remoteJid;
-                const sender = msg.key.participant || msg.key.remoteJid;
-                const senderNum = sender.replace('@s.whatsapp.net', '').replace(/[^0-9]/g, '');
-                const isOwner = isOwnerNum(senderNum);
-                const isGroup = from.endsWith('@g.us');
-
-                const body = msg.message?.conversation
-                    || msg.message?.extendedTextMessage?.text
-                    || msg.message?.imageMessage?.caption || '';
-
-                if (!body.startsWith(config.PREFIX)) continue;
-                if (!isOwner && isSpam(senderNum)) continue;
-                if (cfg.mode === 'private' && !isOwner) continue;
-
-                const args = body.slice(config.PREFIX.length).trim().split(' ');
-                const cmd = args[0].toLowerCase();
-                const text = args.slice(1).join(' ');
-                const reply = (txt) => sendWithTyping(sock, from, { text: txt }, { quoted: msg });
-
-                console.log(`📩 CMD: .${cmd} | From: ${senderNum} | isOwner: ${isOwner}`);
-
-                // ── MENU ──────────────────────────────────
                 if (cmd === 'menu') {
                     const image = fs.readFileSync(botImagePath);
                     await sock.sendMessage(from, { image, caption: menuMain() }, { quoted: msg });
@@ -309,10 +293,8 @@ async function startBot() {
                 else if (cmd === 'general') { await reply(menuGeneral()); }
                 else if (cmd === 'owner') { await reply(menuOwner()); }
                 else if (cmd === 'group') { await reply(menuGroup()); }
-
-                // ── GENERAL ────────────────────────────────
                 else if (cmd === 'alive') {
-                    await reply(`┃ 🤖 *DEVELOPER BOY ALI SINDHI*\n┃\n┃ ✅ *Bot Online Hai!*\n┃ ⏱️ *Uptime:* ${getUptime()}\n┃ 💾 *Memory:* ${getMem()}\n┃ 🌐 *Mode:* ${cfg.mode.toUpperCase()}\n┃ 👁️ *Auto Status:* ${cfg.autoStatus ? 'ON' : 'OFF'}\n┃ 🟢 *Online Mode:* ${cfg.onlinePresence ? 'ON' : 'OFF'}\n┃ 🗑️ *Anti Delete:* ${cfg.antiDelete ? 'ON' : 'OFF'}\n━━━━━━━━━━━━━━━━━━━━\n> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`);
+                    await reply(`┃ 🤖 *DEVELOPER BOY ALI SINDHI*\n┃\n┃ ✅ *Bot Online Hai!*\n┃ ⏱️ *Uptime:* ${getUptime()}\n┃ 💾 *Memory:* ${getMem()}\n┃ 🌐 *Mode:* ${cfg.mode.toUpperCase()}\n┃ 👁️ *Auto Status:* ${cfg.autoStatus ? 'ON' : 'OFF'}\n┃ 🟢 *Online:* ${cfg.onlinePresence ? 'ON' : 'OFF'}\n┃ 🗑️ *Anti Delete:* ${cfg.antiDelete ? 'ON' : 'OFF'}\n━━━━━━━━━━━━━━━━━━━━\n> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`);
                 }
                 else if (cmd === 'ping') {
                     const t = Date.now();
@@ -341,7 +323,7 @@ async function startBot() {
                     } catch { await reply('❌ Weather nahi mila!'); }
                 }
                 else if (cmd === 'pic') {
-                    if (!text) return reply('❌ Example: .pic nature\nYa: .pic cars 5');
+                    if (!text) return reply('❌ Example: .pic nature');
                     const parts = text.trim().split(' ');
                     const lastPart = parts[parts.length - 1];
                     let count = 3;
@@ -357,8 +339,7 @@ async function startBot() {
                                 params: { query, orientation: 'portrait' },
                                 headers: { Authorization: `Client-ID ${process.env.UNSPLASH_KEY || ''}` }
                             });
-                            const imgUrl = res.data.urls.regular;
-                            await sock.sendMessage(from, { image: { url: imgUrl }, caption: `🖼️ *${query}* - ${i+1}/${count}` }, { quoted: msg });
+                            await sock.sendMessage(from, { image: { url: res.data.urls.regular }, caption: `🖼️ *${query}* - ${i+1}/${count}` }, { quoted: msg });
                             await sleep(1000);
                         }
                     } catch { await reply('❌ Wallpaper nahi mila!'); }
@@ -404,8 +385,6 @@ async function startBot() {
                         await reply(`🤖 *AI:*\n${res.data.content[0].text}`);
                     } catch { await reply('❌ AI error!'); }
                 }
-
-                // ── OWNER ──────────────────────────────────
                 else if (cmd === 'mod') {
                     if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
                     if (text === 'public') { cfg.mode = 'public'; saveCfg(); await reply('✅ *Mode: PUBLIC*'); }
@@ -464,8 +443,6 @@ async function startBot() {
                     if (!text) return reply('❌ Message likho: .broadcast Hello!');
                     await reply(`📢 *Broadcast:*\n${text}`);
                 }
-
-                // ── GROUP ──────────────────────────────────
                 else if (cmd === 'tagall') {
                     if (!isGroup) return reply('❌ Group mein use karo!');
                     if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
@@ -496,7 +473,6 @@ async function startBot() {
                     await sock.groupParticipantsUpdate(from, [m], 'demote');
                     await reply(`⬇️ *Admin hata diya:* @${m.split('@')[0]}`);
                 }
-
             } catch (err) {
                 console.error('❌ Error:', err?.message);
             }
