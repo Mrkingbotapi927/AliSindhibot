@@ -14,6 +14,15 @@ import axios from 'axios';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// ─── BOT CONFIG ───────────────────────────────────────────
+const config = {
+    OWNER_ID: '923273788442',  // << Apna number yahan likho
+    INTERVAL: 10000,
+    PREFIX: '.',
+    BOT_NAME: 'Ali Sindhi Bot',
+};
+
+// ─── HELPERS ──────────────────────────────────────────────
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const spamMap = new Map();
 
@@ -23,6 +32,13 @@ function isSpam(num) {
     if (now - last < 3000) return true;
     spamMap.set(num, now);
     return false;
+}
+
+function isOwnerNum(senderNum) {
+    if (!config.OWNER_ID) return false;
+    const s = senderNum.replace(/[^0-9]/g, '');
+    const o = config.OWNER_ID.replace(/[^0-9]/g, '');
+    return s === o || s.slice(-10) === o.slice(-10) || s.slice(-9) === o.slice(-9);
 }
 
 async function sendWithTyping(sock, jid, content, options = {}) {
@@ -36,29 +52,8 @@ async function sendWithTyping(sock, jid, content, options = {}) {
     return sock.sendMessage(jid, content, options);
 }
 
-const OWNER = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
-const PREFIX = '.';
+// ─── PERSISTENT CONFIG ────────────────────────────────────
 const botImagePath = path.join(__dirname, 'ali_sindhi.png');
-
-// ─── SESSION DATA LOAD ─────────────────────────────────────
-// Agar SESSION_DATA environment variable hai toh use karo
-// Warna auth_info folder se load karo
-const SESSION_DATA = process.env.SESSION_DATA || null;
-const authDir = path.join(__dirname, 'auth_info');
-
-if (SESSION_DATA) {
-    try {
-        fs.mkdirSync(authDir, { recursive: true });
-        const sessionFiles = JSON.parse(Buffer.from(SESSION_DATA, 'base64').toString('utf8'));
-        for (const [filename, content] of Object.entries(sessionFiles)) {
-            fs.writeFileSync(path.join(authDir, filename), content);
-        }
-        console.log('✅ Session loaded from SESSION_DATA!');
-    } catch (e) {
-        console.log('❌ Session load error:', e.message);
-    }
-}
-
 const configFile = path.join(__dirname, 'config.json');
 const cfg = {
     mode: 'public',
@@ -78,48 +73,41 @@ function getUptime() {
 }
 function getMem() { return Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB'; }
 
-function isOwnerNum(senderNum) {
-    if (!OWNER) return false;
-    const s = senderNum.replace(/[^0-9]/g, '');
-    const o = OWNER.replace(/[^0-9]/g, '');
-    return s === o || s.slice(-10) === o.slice(-10) || s.slice(-9) === o.slice(-9);
-}
-
 // ─── MENUS ────────────────────────────────────────────────
 function menuMain() {
     return `┃ 🤖 *DEVELOPER BOY ALI SINDHI* 🚀
 ┃
-┃ 👋 Hello @${OWNER}
-┃ ⚡ *Bot Name:* Ali Sindhi Bot
+┃ 👋 Hello @${config.OWNER_ID}
+┃ ⚡ *Bot Name:* ${config.BOT_NAME}
 ┃ 👑 *Owner:* Ali Sindhi
 ┃ 🌐 *Mode:* ${cfg.mode.toUpperCase()}
 ┃ ⏱️ *Uptime:* ${getUptime()}
 ┃ 💾 *Memory:* ${getMem()}
-┃ 🔖 *Prefix:* ${PREFIX}
+┃ 🔖 *Prefix:* ${config.PREFIX}
 ┃ 📌 *Version:* 1.0.0
 ━━━━━━━━━━━━━━━━━━━━
 
 📋 *Category select karo:*
-❯ ${PREFIX}general — 🔰 General
-❯ ${PREFIX}owner  — 👑 Owner
-❯ ${PREFIX}group  — 👥 Group`;
+❯ ${config.PREFIX}general — 🔰 General
+❯ ${config.PREFIX}owner  — 👑 Owner
+❯ ${config.PREFIX}group  — 👥 Group`;
 }
 
 function menuGeneral() {
     return `┃ 🔰 *GENERAL COMMANDS*
 ┃
-┃ ${PREFIX}menu — Main menu
-┃ ${PREFIX}alive — Bot check
-┃ ${PREFIX}ping — Speed check
-┃ ${PREFIX}time — Current time
-┃ ${PREFIX}quote — Random quote
-┃ ${PREFIX}calc [expr] — Calculator
-┃ ${PREFIX}weather [city] — Mausam
-┃ ${PREFIX}pic [name] — Wallpaper
-┃ ${PREFIX}vv — View once save
-┃ ${PREFIX}sticker — Image to sticker
-┃ ${PREFIX}tts [text] — Text to speech
-┃ ${PREFIX}ai [sawaal] — AI se poocho
+┃ ${config.PREFIX}menu — Main menu
+┃ ${config.PREFIX}alive — Bot check
+┃ ${config.PREFIX}ping — Speed check
+┃ ${config.PREFIX}time — Current time
+┃ ${config.PREFIX}quote — Random quote
+┃ ${config.PREFIX}calc [expr] — Calculator
+┃ ${config.PREFIX}weather [city] — Mausam
+┃ ${config.PREFIX}pic [name] — Wallpaper
+┃ ${config.PREFIX}vv — View once save
+┃ ${config.PREFIX}sticker — Image to sticker
+┃ ${config.PREFIX}tts [text] — Text to speech
+┃ ${config.PREFIX}ai [sawaal] — AI se poocho
 ━━━━━━━━━━━━━━━━━━━━
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
@@ -127,14 +115,14 @@ function menuGeneral() {
 function menuOwner() {
     return `┃ 👑 *OWNER COMMANDS*
 ┃
-┃ ${PREFIX}mod public/private — Mode
-┃ ${PREFIX}auto status on/off — Status view
-┃ ${PREFIX}call on/off — Call block
-┃ ${PREFIX}online on/off — Online presence
-┃ ${PREFIX}msg on/off — Anti delete
-┃ ${PREFIX}block @user — Block
-┃ ${PREFIX}unblock @user — Unblock
-┃ ${PREFIX}broadcast [msg] — Sab ko msg
+┃ ${config.PREFIX}mod public/private — Mode
+┃ ${config.PREFIX}auto status on/off — Status view
+┃ ${config.PREFIX}call on/off — Call block
+┃ ${config.PREFIX}online on/off — Online presence
+┃ ${config.PREFIX}msg on/off — Anti delete
+┃ ${config.PREFIX}block @user — Block
+┃ ${config.PREFIX}unblock @user — Unblock
+┃ ${config.PREFIX}broadcast [msg] — Sab ko msg
 ━━━━━━━━━━━━━━━━━━━━
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
@@ -142,15 +130,15 @@ function menuOwner() {
 function menuGroup() {
     return `┃ 👥 *GROUP COMMANDS*
 ┃
-┃ ${PREFIX}tagall — Sab ko tag
-┃ ${PREFIX}kick @user — Hatao
-┃ ${PREFIX}promote @user — Admin banao
-┃ ${PREFIX}demote @user — Admin hatao
+┃ ${config.PREFIX}tagall — Sab ko tag
+┃ ${config.PREFIX}kick @user — Hatao
+┃ ${config.PREFIX}promote @user — Admin banao
+┃ ${config.PREFIX}demote @user — Admin hatao
 ━━━━━━━━━━━━━━━━━━━━
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
 
-// ─── BOT ──────────────────────────────────────────────────
+// ─── BOT START ────────────────────────────────────────────
 let pairingRequested = false;
 let onlineInterval = null;
 const deletedMsgs = new Map();
@@ -183,7 +171,7 @@ async function startBot() {
             console.log('⏳ Waiting 2s...');
             setTimeout(async () => {
                 try {
-                    let code = await sock.requestPairingCode(OWNER);
+                    let code = await sock.requestPairingCode(config.OWNER_ID);
                     code = code?.match(/.{1,4}/g)?.join('-') || code;
                     console.log(`\n🔑 PAIRING CODE: ${code}`);
                     console.log(`👉 WhatsApp → Linked Devices → Link with phone number\n`);
@@ -196,12 +184,12 @@ async function startBot() {
 
         if (connection === 'open') {
             console.log('✅ DEVELOPER BOY ALI SINDHI is ONLINE!');
-            console.log('👑 Owner:', OWNER);
+            console.log('👑 Owner:', config.OWNER_ID);
             pairingRequested = false;
             if (cfg.onlinePresence) {
                 onlineInterval = setInterval(async () => {
                     try { await sock.sendPresenceUpdate('available'); } catch {}
-                }, 10000);
+                }, config.INTERVAL);
             }
         }
 
@@ -224,30 +212,19 @@ async function startBot() {
                 try {
                     const sender = msg.key.participant || msg.key.remoteJid;
                     await sock.readMessages([msg.key]);
-                    await sock.sendReceipt(
-                        msg.key.remoteJid,
-                        sender,
-                        [msg.key.id],
-                        'read'
-                    );
+                    await sock.sendReceipt(msg.key.remoteJid, sender, [msg.key.id], 'read');
                     console.log('👁️ Status seen:', sender);
-                } catch (e) {
-                    console.log('Status error:', e.message);
-                }
+                } catch (e) {}
             }
         }
     });
 
     // ─── ANTI DELETE ───────────────────────────────────────
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
-        if (!cfg.antiDelete) return;
-        if (type !== 'notify') return;
+        if (!cfg.antiDelete || type !== 'notify') return;
         for (const msg of messages) {
-            if (!msg.message) continue;
-            if (msg.key.remoteJid === 'status@broadcast') continue;
-            // Save message to memory
+            if (!msg.message || msg.key.remoteJid === 'status@broadcast') continue;
             deletedMsgs.set(msg.key.id, msg);
-            // Keep only last 200 messages
             if (deletedMsgs.size > 200) {
                 const firstKey = deletedMsgs.keys().next().value;
                 deletedMsgs.delete(firstKey);
@@ -258,53 +235,29 @@ async function startBot() {
     sock.ev.on('messages.delete', async (item) => {
         if (!cfg.antiDelete) return;
         try {
-            const ownerJid = OWNER + '@s.whatsapp.net';
+            const ownerJid = config.OWNER_ID + '@s.whatsapp.net';
             if ('keys' in item) {
                 for (const key of item.keys) {
                     const saved = deletedMsgs.get(key.id);
-                    if (!saved || !saved.message) continue;
-                    const from = key.remoteJid;
-                    const sender = key.participant || from;
-                    const senderName = saved.pushName || sender.split('@')[0];
-
-                    let caption = `🗑️ *Deleted Message*\n👤 *From:* ${senderName}\n📍 *Chat:* ${from.endsWith('@g.us') ? 'Group' : 'Personal'}`;
-
+                    if (!saved?.message) continue;
+                    const senderName = saved.pushName || key.remoteJid.split('@')[0];
+                    const caption = `🗑️ *Deleted Message*\n👤 *From:* ${senderName}\n📍 *Chat:* ${key.remoteJid.endsWith('@g.us') ? 'Group' : 'Personal'}`;
                     const msgType = Object.keys(saved.message)[0];
-
                     if (msgType === 'conversation' || msgType === 'extendedTextMessage') {
                         const text = saved.message?.conversation || saved.message?.extendedTextMessage?.text;
-                        await sock.sendMessage(ownerJid, {
-                            text: `${caption}\n💬 *Message:* ${text}`
-                        });
+                        await sock.sendMessage(ownerJid, { text: `${caption}\n💬 *Message:* ${text}` });
                     } else if (msgType === 'imageMessage') {
                         const buf = await downloadMediaMessage(saved, 'buffer', {});
-                        await sock.sendMessage(ownerJid, {
-                            image: buf,
-                            caption: caption
-                        });
+                        await sock.sendMessage(ownerJid, { image: buf, caption });
                     } else if (msgType === 'videoMessage') {
                         const buf = await downloadMediaMessage(saved, 'buffer', {});
-                        await sock.sendMessage(ownerJid, {
-                            video: buf,
-                            caption: caption
-                        });
-                    } else if (msgType === 'audioMessage') {
-                        const buf = await downloadMediaMessage(saved, 'buffer', {});
-                        await sock.sendMessage(ownerJid, {
-                            audio: buf,
-                            mimetype: 'audio/mp4',
-                            caption: caption
-                        });
+                        await sock.sendMessage(ownerJid, { video: buf, caption });
                     } else {
-                        await sock.sendMessage(ownerJid, {
-                            text: `${caption}\n📎 *Type:* ${msgType}`
-                        });
+                        await sock.sendMessage(ownerJid, { text: `${caption}\n📎 *Type:* ${msgType}` });
                     }
                 }
             }
-        } catch (e) {
-            console.log('Anti-delete error:', e.message);
-        }
+        } catch (e) { console.log('Anti-delete error:', e.message); }
     });
 
     // ─── CALL BLOCK ────────────────────────────────────────
@@ -322,7 +275,6 @@ async function startBot() {
     // ─── MESSAGES ──────────────────────────────────────────
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
-
         for (const msg of messages) {
             try {
                 if (!msg.message) continue;
@@ -338,14 +290,13 @@ async function startBot() {
                     || msg.message?.extendedTextMessage?.text
                     || msg.message?.imageMessage?.caption || '';
 
-                if (!body.startsWith(PREFIX)) continue;
+                if (!body.startsWith(config.PREFIX)) continue;
                 if (!isOwner && isSpam(senderNum)) continue;
                 if (cfg.mode === 'private' && !isOwner) continue;
 
-                const args = body.slice(PREFIX.length).trim().split(' ');
+                const args = body.slice(config.PREFIX.length).trim().split(' ');
                 const cmd = args[0].toLowerCase();
                 const text = args.slice(1).join(' ');
-
                 const reply = (txt) => sendWithTyping(sock, from, { text: txt }, { quoted: msg });
 
                 console.log(`📩 CMD: .${cmd} | From: ${senderNum} | isOwner: ${isOwner}`);
@@ -404,33 +355,27 @@ async function startBot() {
                         for (let i = 0; i < count; i++) {
                             const res = await axios.get(`https://api.unsplash.com/photos/random`, {
                                 params: { query, orientation: 'portrait' },
-                                headers: { Authorization: `Client-ID ${process.env.UNSPLASH_KEY || 'YOUR_UNSPLASH_KEY'}` }
+                                headers: { Authorization: `Client-ID ${process.env.UNSPLASH_KEY || ''}` }
                             });
                             const imgUrl = res.data.urls.regular;
                             await sock.sendMessage(from, { image: { url: imgUrl }, caption: `🖼️ *${query}* - ${i+1}/${count}` }, { quoted: msg });
                             await sleep(1000);
                         }
-                    } catch { await reply('❌ Wallpaper nahi mila! Unsplash API key check karo.'); }
+                    } catch { await reply('❌ Wallpaper nahi mila!'); }
                 }
                 else if (cmd === 'vv') {
                     const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
                     if (!quoted) return reply('❌ View once message quote karo!');
                     try {
-                        const msgType = Object.keys(quoted)[0];
-                        if (msgType === 'imageMessage' || msgType === 'viewOnceMessage' || msgType === 'viewOnceMessageV2') {
-                            const innerMsg = quoted?.viewOnceMessage?.message || quoted?.viewOnceMessageV2?.message || quoted;
-                            const innerType = Object.keys(innerMsg)[0];
-                            const mediaMsg = innerMsg[innerType];
-                            const buf = await downloadMediaMessage(
-                                { message: innerMsg, key: msg.key }, 'buffer', {}
-                            );
-                            if (innerType === 'imageMessage') {
-                                await sock.sendMessage(from, { image: buf, caption: '👁️ *View Once Image*' }, { quoted: msg });
-                            } else if (innerType === 'videoMessage') {
-                                await sock.sendMessage(from, { video: buf, caption: '👁️ *View Once Video*' }, { quoted: msg });
-                            }
+                        const innerMsg = quoted?.viewOnceMessage?.message || quoted?.viewOnceMessageV2?.message || quoted;
+                        const innerType = Object.keys(innerMsg)[0];
+                        const buf = await downloadMediaMessage({ message: innerMsg, key: msg.key }, 'buffer', {});
+                        if (innerType === 'imageMessage') {
+                            await sock.sendMessage(from, { image: buf, caption: '👁️ *View Once Image*' }, { quoted: msg });
+                        } else if (innerType === 'videoMessage') {
+                            await sock.sendMessage(from, { video: buf, caption: '👁️ *View Once Video*' }, { quoted: msg });
                         } else {
-                            await reply('❌ Yeh view once message nahi hai!');
+                            await reply('❌ Yeh view once nahi hai!');
                         }
                     } catch { await reply('❌ View once save nahi ho saka!'); }
                 }
@@ -486,18 +431,17 @@ async function startBot() {
                         if (onlineInterval) clearInterval(onlineInterval);
                         onlineInterval = setInterval(async () => {
                             try { await sock.sendPresenceUpdate('available'); } catch {}
-                        }, 10000);
-                        await reply('🟢 *Online Presence: ON*\nAb tu offline ho to bhi bot online dikhega!');
+                        }, config.INTERVAL);
+                        await reply('🟢 *Online Presence: ON*');
                     } else if (text === 'off') {
                         cfg.onlinePresence = false; saveCfg();
                         if (onlineInterval) clearInterval(onlineInterval);
-                        onlineInterval = null;
                         await reply('⚫ *Online Presence: OFF*');
                     } else await reply('❌ Use: .online on ya .online off');
                 }
                 else if (cmd === 'msg') {
                     if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
-                    if (text === 'on') { cfg.antiDelete = true; saveCfg(); await reply('🗑️ *Anti Delete: ON*\nDeleted messages tujhe forward honge!'); }
+                    if (text === 'on') { cfg.antiDelete = true; saveCfg(); await reply('🗑️ *Anti Delete: ON*'); }
                     else if (text === 'off') { cfg.antiDelete = false; saveCfg(); await reply('⚫ *Anti Delete: OFF*'); }
                     else await reply('❌ Use: .msg on ya .msg off');
                 }
