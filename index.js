@@ -2,7 +2,8 @@ import makeWASocket, {
     useMultiFileAuthState,
     DisconnectReason,
     fetchLatestBaileysVersion,
-    makeCacheableSignalKeyStore
+    makeCacheableSignalKeyStore,
+    downloadMediaMessage
 } from '@whiskeysockets/baileys';
 import pino from 'pino';
 import fs from 'fs';
@@ -35,7 +36,6 @@ async function sendWithTyping(sock, jid, content, options = {}) {
     return sock.sendMessage(jid, content, options);
 }
 
-// ─── CONFIG ───────────────────────────────────────────────
 const OWNER = (process.env.OWNER_NUMBER || '').replace(/[^0-9]/g, '');
 const PREFIX = '.';
 const botImagePath = path.join(__dirname, 'ali_sindhi.png');
@@ -46,6 +46,7 @@ const cfg = {
     autoStatus: true,
     callBlock: false,
     onlinePresence: false,
+    antiDelete: false,
 };
 if (fs.existsSync(configFile)) {
     try { Object.assign(cfg, JSON.parse(fs.readFileSync(configFile, 'utf8'))); } catch {}
@@ -59,9 +60,10 @@ function getUptime() {
 function getMem() { return Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB'; }
 
 function isOwnerNum(senderNum) {
+    if (!OWNER) return false;
     const s = senderNum.replace(/[^0-9]/g, '');
     const o = OWNER.replace(/[^0-9]/g, '');
-    return s === o || s.slice(-10) === o.slice(-10);
+    return s === o || s.slice(-10) === o.slice(-10) || s.slice(-9) === o.slice(-9);
 }
 
 // ─── MENUS ────────────────────────────────────────────────
@@ -81,8 +83,7 @@ function menuMain() {
 📋 *Category select karo:*
 ❯ ${PREFIX}general — 🔰 General
 ❯ ${PREFIX}owner  — 👑 Owner
-❯ ${PREFIX}group  — 👥 Group
-❯ ${PREFIX}media  — 🛠️ Media & AI`;
+❯ ${PREFIX}group  — 👥 Group`;
 }
 
 function menuGeneral() {
@@ -95,6 +96,11 @@ function menuGeneral() {
 ┃ ${PREFIX}quote — Random quote
 ┃ ${PREFIX}calc [expr] — Calculator
 ┃ ${PREFIX}weather [city] — Mausam
+┃ ${PREFIX}pic [name] — Wallpaper
+┃ ${PREFIX}vv — View once save
+┃ ${PREFIX}sticker — Image to sticker
+┃ ${PREFIX}tts [text] — Text to speech
+┃ ${PREFIX}ai [sawaal] — AI se poocho
 ━━━━━━━━━━━━━━━━━━━━
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
@@ -106,6 +112,7 @@ function menuOwner() {
 ┃ ${PREFIX}auto status on/off — Status view
 ┃ ${PREFIX}call on/off — Call block
 ┃ ${PREFIX}online on/off — Online presence
+┃ ${PREFIX}msg on/off — Anti delete
 ┃ ${PREFIX}block @user — Block
 ┃ ${PREFIX}unblock @user — Unblock
 ┃ ${PREFIX}broadcast [msg] — Sab ko msg
@@ -124,20 +131,10 @@ function menuGroup() {
 > ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
 }
 
-function menuMedia() {
-    return `┃ 🛠️ *MEDIA & AI*
-┃
-┃ ${PREFIX}sticker — Image to sticker
-┃ ${PREFIX}tts [text] — Text to speech
-┃ ${PREFIX}ai [sawaal] — AI se poocho
-┃ ${PREFIX}imagine [prompt] — AI image
-━━━━━━━━━━━━━━━━━━━━
-> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`;
-}
-
 // ─── BOT ──────────────────────────────────────────────────
 let pairingRequested = false;
 let onlineInterval = null;
+const deletedMsgs = new Map();
 
 async function startBot() {
     const { state, saveCreds } = await useMultiFileAuthState('auth_info/');
@@ -182,8 +179,6 @@ async function startBot() {
             console.log('✅ DEVELOPER BOY ALI SINDHI is ONLINE!');
             console.log('👑 Owner:', OWNER);
             pairingRequested = false;
-
-            // Auto online presence if enabled
             if (cfg.onlinePresence) {
                 onlineInterval = setInterval(async () => {
                     try { await sock.sendPresenceUpdate('available'); } catch {}
@@ -194,8 +189,7 @@ async function startBot() {
         if (connection === 'close') {
             if (onlineInterval) clearInterval(onlineInterval);
             const code = lastDisconnect?.error?.output?.statusCode;
-            const shouldReconnect = code !== DisconnectReason.loggedOut;
-            if (shouldReconnect) {
+            if (code !== DisconnectReason.loggedOut) {
                 pairingRequested = false;
                 startBot();
             } else {
@@ -208,8 +202,89 @@ async function startBot() {
     sock.ev.on('messages.upsert', async ({ messages }) => {
         for (const msg of messages) {
             if (msg.key.remoteJid === 'status@broadcast' && cfg.autoStatus) {
-                try { await sock.readMessages([msg.key]); } catch {}
+                try {
+                    const sender = msg.key.participant || msg.key.remoteJid;
+                    await sock.readMessages([msg.key]);
+                    await sock.sendReceipt(
+                        msg.key.remoteJid,
+                        sender,
+                        [msg.key.id],
+                        'read'
+                    );
+                    console.log('👁️ Status seen:', sender);
+                } catch (e) {
+                    console.log('Status error:', e.message);
+                }
             }
+        }
+    });
+
+    // ─── ANTI DELETE ───────────────────────────────────────
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (!cfg.antiDelete) return;
+        if (type !== 'notify') return;
+        for (const msg of messages) {
+            if (!msg.message) continue;
+            if (msg.key.remoteJid === 'status@broadcast') continue;
+            // Save message to memory
+            deletedMsgs.set(msg.key.id, msg);
+            // Keep only last 200 messages
+            if (deletedMsgs.size > 200) {
+                const firstKey = deletedMsgs.keys().next().value;
+                deletedMsgs.delete(firstKey);
+            }
+        }
+    });
+
+    sock.ev.on('messages.delete', async (item) => {
+        if (!cfg.antiDelete) return;
+        try {
+            const ownerJid = OWNER + '@s.whatsapp.net';
+            if ('keys' in item) {
+                for (const key of item.keys) {
+                    const saved = deletedMsgs.get(key.id);
+                    if (!saved || !saved.message) continue;
+                    const from = key.remoteJid;
+                    const sender = key.participant || from;
+                    const senderName = saved.pushName || sender.split('@')[0];
+
+                    let caption = `🗑️ *Deleted Message*\n👤 *From:* ${senderName}\n📍 *Chat:* ${from.endsWith('@g.us') ? 'Group' : 'Personal'}`;
+
+                    const msgType = Object.keys(saved.message)[0];
+
+                    if (msgType === 'conversation' || msgType === 'extendedTextMessage') {
+                        const text = saved.message?.conversation || saved.message?.extendedTextMessage?.text;
+                        await sock.sendMessage(ownerJid, {
+                            text: `${caption}\n💬 *Message:* ${text}`
+                        });
+                    } else if (msgType === 'imageMessage') {
+                        const buf = await downloadMediaMessage(saved, 'buffer', {});
+                        await sock.sendMessage(ownerJid, {
+                            image: buf,
+                            caption: caption
+                        });
+                    } else if (msgType === 'videoMessage') {
+                        const buf = await downloadMediaMessage(saved, 'buffer', {});
+                        await sock.sendMessage(ownerJid, {
+                            video: buf,
+                            caption: caption
+                        });
+                    } else if (msgType === 'audioMessage') {
+                        const buf = await downloadMediaMessage(saved, 'buffer', {});
+                        await sock.sendMessage(ownerJid, {
+                            audio: buf,
+                            mimetype: 'audio/mp4',
+                            caption: caption
+                        });
+                    } else {
+                        await sock.sendMessage(ownerJid, {
+                            text: `${caption}\n📎 *Type:* ${msgType}`
+                        });
+                    }
+                }
+            }
+        } catch (e) {
+            console.log('Anti-delete error:', e.message);
         }
     });
 
@@ -264,11 +339,10 @@ async function startBot() {
                 else if (cmd === 'general') { await reply(menuGeneral()); }
                 else if (cmd === 'owner') { await reply(menuOwner()); }
                 else if (cmd === 'group') { await reply(menuGroup()); }
-                else if (cmd === 'media') { await reply(menuMedia()); }
 
                 // ── GENERAL ────────────────────────────────
                 else if (cmd === 'alive') {
-                    await reply(`┃ 🤖 *DEVELOPER BOY ALI SINDHI*\n┃\n┃ ✅ *Bot Online Hai!*\n┃ ⏱️ *Uptime:* ${getUptime()}\n┃ 💾 *Memory:* ${getMem()}\n┃ 🌐 *Mode:* ${cfg.mode.toUpperCase()}\n┃ 👁️ *Online Mode:* ${cfg.onlinePresence ? 'ON' : 'OFF'}\n━━━━━━━━━━━━━━━━━━━━\n> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`);
+                    await reply(`┃ 🤖 *DEVELOPER BOY ALI SINDHI*\n┃\n┃ ✅ *Bot Online Hai!*\n┃ ⏱️ *Uptime:* ${getUptime()}\n┃ 💾 *Memory:* ${getMem()}\n┃ 🌐 *Mode:* ${cfg.mode.toUpperCase()}\n┃ 👁️ *Auto Status:* ${cfg.autoStatus ? 'ON' : 'OFF'}\n┃ 🟢 *Online Mode:* ${cfg.onlinePresence ? 'ON' : 'OFF'}\n┃ 🗑️ *Anti Delete:* ${cfg.antiDelete ? 'ON' : 'OFF'}\n━━━━━━━━━━━━━━━━━━━━\n> ⚡ 𝐀𝐋𝐈 𝐒𝐈𝐍𝐃𝐇𝐈 ⚡`);
                 }
                 else if (cmd === 'ping') {
                     const t = Date.now();
@@ -296,12 +370,82 @@ async function startBot() {
                         await reply(`🌤️ *Weather:*\n${res.data}`);
                     } catch { await reply('❌ Weather nahi mila!'); }
                 }
+                else if (cmd === 'pic') {
+                    if (!text) return reply('❌ Example: .pic nature\nYa: .pic cars 5');
+                    const parts = text.trim().split(' ');
+                    const lastPart = parts[parts.length - 1];
+                    let count = 3;
+                    let query = text;
+                    if (!isNaN(lastPart) && parseInt(lastPart) <= 10) {
+                        count = parseInt(lastPart);
+                        query = parts.slice(0, -1).join(' ');
+                    }
+                    await reply(`🖼️ *${query}* ke ${count} wallpaper dhundh raha hoon...`);
+                    try {
+                        for (let i = 0; i < count; i++) {
+                            const res = await axios.get(`https://api.unsplash.com/photos/random`, {
+                                params: { query, orientation: 'portrait' },
+                                headers: { Authorization: `Client-ID ${process.env.UNSPLASH_KEY || 'YOUR_UNSPLASH_KEY'}` }
+                            });
+                            const imgUrl = res.data.urls.regular;
+                            await sock.sendMessage(from, { image: { url: imgUrl }, caption: `🖼️ *${query}* - ${i+1}/${count}` }, { quoted: msg });
+                            await sleep(1000);
+                        }
+                    } catch { await reply('❌ Wallpaper nahi mila! Unsplash API key check karo.'); }
+                }
+                else if (cmd === 'vv') {
+                    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                    if (!quoted) return reply('❌ View once message quote karo!');
+                    try {
+                        const msgType = Object.keys(quoted)[0];
+                        if (msgType === 'imageMessage' || msgType === 'viewOnceMessage' || msgType === 'viewOnceMessageV2') {
+                            const innerMsg = quoted?.viewOnceMessage?.message || quoted?.viewOnceMessageV2?.message || quoted;
+                            const innerType = Object.keys(innerMsg)[0];
+                            const mediaMsg = innerMsg[innerType];
+                            const buf = await downloadMediaMessage(
+                                { message: innerMsg, key: msg.key }, 'buffer', {}
+                            );
+                            if (innerType === 'imageMessage') {
+                                await sock.sendMessage(from, { image: buf, caption: '👁️ *View Once Image*' }, { quoted: msg });
+                            } else if (innerType === 'videoMessage') {
+                                await sock.sendMessage(from, { video: buf, caption: '👁️ *View Once Video*' }, { quoted: msg });
+                            }
+                        } else {
+                            await reply('❌ Yeh view once message nahi hai!');
+                        }
+                    } catch { await reply('❌ View once save nahi ho saka!'); }
+                }
+                else if (cmd === 'sticker') {
+                    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
+                    const imgMsg = quoted?.imageMessage || msg.message?.imageMessage;
+                    if (!imgMsg) return reply('❌ Image quote karo ya saath bhejo!');
+                    try {
+                        const buf = await downloadMediaMessage({ message: { imageMessage: imgMsg }, key: msg.key }, 'buffer', {});
+                        await sock.sendMessage(from, { sticker: buf }, { quoted: msg });
+                    } catch { await reply('❌ Sticker nahi bana!'); }
+                }
+                else if (cmd === 'tts') {
+                    if (!text) return reply('❌ Example: .tts Hello');
+                    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ur&client=tw-ob`;
+                    await sock.sendMessage(from, { audio: { url }, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
+                }
+                else if (cmd === 'ai') {
+                    if (!text) return reply('❌ Example: .ai Pakistan ki capital?');
+                    await reply('🤖 *Sooch raha hoon...*');
+                    try {
+                        const res = await axios.post('https://api.anthropic.com/v1/messages', {
+                            model: 'claude-sonnet-4-20250514', max_tokens: 500,
+                            messages: [{ role: 'user', content: text }]
+                        }, { headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } });
+                        await reply(`🤖 *AI:*\n${res.data.content[0].text}`);
+                    } catch { await reply('❌ AI error!'); }
+                }
 
                 // ── OWNER ──────────────────────────────────
                 else if (cmd === 'mod') {
                     if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
-                    if (text === 'public') { cfg.mode = 'public'; saveCfg(); await reply('✅ *Mode: PUBLIC*\nAb sab use kar sakte hain!'); }
-                    else if (text === 'private') { cfg.mode = 'private'; saveCfg(); await reply('🔒 *Mode: PRIVATE*\nSirf owner use kar sakta hai!'); }
+                    if (text === 'public') { cfg.mode = 'public'; saveCfg(); await reply('✅ *Mode: PUBLIC*'); }
+                    else if (text === 'private') { cfg.mode = 'private'; saveCfg(); await reply('🔒 *Mode: PRIVATE*'); }
                     else await reply('❌ Use: .mod public ya .mod private');
                 }
                 else if (cmd === 'auto') {
@@ -324,13 +468,19 @@ async function startBot() {
                         onlineInterval = setInterval(async () => {
                             try { await sock.sendPresenceUpdate('available'); } catch {}
                         }, 10000);
-                        await reply('🟢 *Online Presence: ON*\nAb tu offline hoga to bhi bot online dikhega!');
+                        await reply('🟢 *Online Presence: ON*\nAb tu offline ho to bhi bot online dikhega!');
                     } else if (text === 'off') {
                         cfg.onlinePresence = false; saveCfg();
                         if (onlineInterval) clearInterval(onlineInterval);
                         onlineInterval = null;
                         await reply('⚫ *Online Presence: OFF*');
                     } else await reply('❌ Use: .online on ya .online off');
+                }
+                else if (cmd === 'msg') {
+                    if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
+                    if (text === 'on') { cfg.antiDelete = true; saveCfg(); await reply('🗑️ *Anti Delete: ON*\nDeleted messages tujhe forward honge!'); }
+                    else if (text === 'off') { cfg.antiDelete = false; saveCfg(); await reply('⚫ *Anti Delete: OFF*'); }
+                    else await reply('❌ Use: .msg on ya .msg off');
                 }
                 else if (cmd === 'block') {
                     if (!isOwner) return reply('❌ Sirf owner use kar sakta hai!');
@@ -382,37 +532,6 @@ async function startBot() {
                     if (!m) return reply('❌ Tag karo: .demote @user');
                     await sock.groupParticipantsUpdate(from, [m], 'demote');
                     await reply(`⬇️ *Admin hata diya:* @${m.split('@')[0]}`);
-                }
-
-                // ── MEDIA & AI ─────────────────────────────
-                else if (cmd === 'sticker') {
-                    const quoted = msg.message?.extendedTextMessage?.contextInfo?.quotedMessage;
-                    const imgMsg = quoted?.imageMessage || msg.message?.imageMessage;
-                    if (!imgMsg) return reply('❌ Image quote karo ya saath bhejo!');
-                    try {
-                        const buf = await sock.downloadMediaMessage({ message: { imageMessage: imgMsg }, key: msg.key }, 'buffer');
-                        await sock.sendMessage(from, { sticker: buf }, { quoted: msg });
-                    } catch { await reply('❌ Sticker nahi bana!'); }
-                }
-                else if (cmd === 'tts') {
-                    if (!text) return reply('❌ Example: .tts Hello');
-                    const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=ur&client=tw-ob`;
-                    await sock.sendMessage(from, { audio: { url }, mimetype: 'audio/mpeg', ptt: true }, { quoted: msg });
-                }
-                else if (cmd === 'ai') {
-                    if (!text) return reply('❌ Example: .ai Pakistan ki capital?');
-                    await reply('🤖 *Sooch raha hoon...*');
-                    try {
-                        const res = await axios.post('https://api.anthropic.com/v1/messages', {
-                            model: 'claude-sonnet-4-20250514', max_tokens: 500,
-                            messages: [{ role: 'user', content: text }]
-                        }, { headers: { 'x-api-key': process.env.ANTHROPIC_API_KEY || '', 'anthropic-version': '2023-06-01', 'content-type': 'application/json' } });
-                        await reply(`🤖 *AI:*\n${res.data.content[0].text}`);
-                    } catch { await reply('❌ AI error!'); }
-                }
-                else if (cmd === 'imagine') {
-                    if (!text) return reply('❌ Example: .imagine red lion');
-                    await reply('🎨 *Image feature coming soon!*');
                 }
 
             } catch (err) {
